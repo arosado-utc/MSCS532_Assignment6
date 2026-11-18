@@ -2,20 +2,20 @@
 MSCS 532 - Assignment 6
 Medians and Order Statistics: selection algorithms.
 
-This module will hold two in-place algorithms for the kth
-smallest element of a list, both built on the same three-way
-partition so that a list full of duplicates cannot force the
-quadratic case:
+In-place selection of the kth smallest element of a list, built
+on a three-way partition so that a list full of duplicates
+cannot force the quadratic case.
 
-  kth_smallest      - deterministic, worst-case O(n)
-  select_random     - randomized, expected O(n)
+  kth_smallest      - deterministic, worst-case O(n): the pivot is
+                      the median of the medians of groups of five
+                      (Blum, Floyd, Pratt, Rivest & Tarjan, 1973).
 
 k is 1-based: kth_smallest(a, 1) is the minimum and
 kth_smallest(a, len(a)) is the maximum.
 
-This is the first cut of the module: the shared partition and
-the small-range sorter that both algorithms will use, plus a
-demo. The two public entry points land in the next commits.
+When a stats dict is passed, the partitions count their
+comparisons and swaps into it, and the empirical analysis in the
+report is built on those exact counts.
 """
 
 _GROUP = 5     # group size for the median of medians
@@ -77,16 +77,94 @@ def _insertion_sort(a, lo, hi, stats):
         a[j + 1] = x
 
 
+def _median_of_medians(a, lo, hi, stats):
+    """Return the median of the group medians of a[lo..hi].
+
+    Each group of _GROUP consecutive elements is insertion-sorted
+    in place and its median is compacted to the front of the
+    range, so the m = (hi - lo + 1) / 5 medians sit in
+    a[lo..lo+m-1] and a recursive select picks their median in
+    the same array. No auxiliary storage beyond the call stack.
+    """
+    m = 0
+    i = lo
+    while i <= hi:
+        end = min(i + _GROUP - 1, hi)
+        _insertion_sort(a, i, end, stats)
+        mid = (i + end) // 2
+        a[lo + m], a[mid] = a[mid], a[lo + m]
+        if stats is not None:
+            stats["swaps"] += 1
+        m += 1
+        i = end + 1
+    if m == 1:
+        return a[lo]
+    k = (m + 1) // 2
+    return _select(a, lo, lo + m - 1, k, stats)
+
+
+def _select(a, lo, hi, k, stats):
+    """Deterministic recursive driver. k is 1-based within the
+    range a[lo..hi] (k = 1 is the smallest element of the range).
+    """
+    if hi - lo + 1 <= _CUTOFF:
+        _insertion_sort(a, lo, hi, stats)
+        return a[lo + k - 1]
+    pivot = _median_of_medians(a, lo, hi, stats)
+    lt, gt = _three_way(a, lo, hi, pivot, stats)
+    eq_start = lt - lo + 1      # 1-based rank of the first pivot
+    eq_end = gt - lo + 1        # 1-based rank of the last pivot
+    if eq_start <= k <= eq_end:
+        return pivot
+    if k < eq_start:
+        return _select(a, lo, lt - 1, k, stats)
+    return _select(a, gt + 1, hi, k - eq_end, stats)
+
+
+def kth_smallest(a, k, stats=None):
+    """Return the kth smallest element of a (k is 1-based).
+
+    The deterministic worst-case linear-time selection algorithm:
+    every round pivots on the median of the medians of groups of
+    five, which is guaranteed to discard at least 30% of the range
+    no matter how the input is ordered, so no input order is a
+    worst case. The list is reordered in place as a side effect,
+    but the kth smallest value is what the call returns.
+
+    Parameters: a     - list of comparable elements
+                k     - 1-based rank, 1 <= k <= len(a)
+                stats - optional dict; filled with "comparisons"
+                        and "swaps" when given
+    Return:    the kth smallest value
+
+    Complexity:
+        Time   - O(n) worst case: T(n) <= T(n/5) + T(7n/10 + 6)
+                 + O(n), which resolves to linear because 7/10 + 1/5
+                 is below 1.
+        Space  - O(log n) call stack (the median recursion) plus
+                 O(1) working storage; the algorithm is in place.
+    """
+    if not a:
+        raise ValueError("kth_smallest needs a non-empty list")
+    if not 1 <= k <= len(a):
+        raise ValueError(f"k={k} is out of range 1..{len(a)}")
+    return _select(a, 0, len(a) - 1, k, stats)
+
+
 def main():
-    a = [29, 10, 14, 23, 12, 6, 1, 21]
-    stats = {"comparisons": 0, "swaps": 0}
-    _insertion_sort(a, 0, len(a) - 1, stats)
-    print("insertion-sorted:", a)
-    print("comparisons:", stats["comparisons"])
-    b = [7, 7, 7, 7, 7]
-    lt, gt = _three_way(b, 0, len(b) - 1, 7, stats)
-    print(f"all-equal three-way: equal block is [{lt}, {gt}] of {len(b)}")
-    print("swaps so far:", stats["swaps"])
+    samples = [
+        ([29, 10, 14, 23, 12, 6, 1, 21], 4),
+        ([7, 7, 7, 7, 7], 3),
+        ([5, 3, 5, 1, 5, 3, 5, 2], 5),
+        (list(range(1, 17)), 8),
+        ([-4, 2, -4, 9, -4, 0], 3),
+    ]
+    for arr, k in samples:
+        expect = sorted(arr)[k - 1]
+        print(f"k={k:2d}  input={arr}")
+        print(f"  kth_smallest : {kth_smallest(arr[:], k)}")
+        print(f"  expected     : {expect}")
+        print()
 
 
 if __name__ == "__main__":
