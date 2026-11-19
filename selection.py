@@ -2,13 +2,15 @@
 MSCS 532 - Assignment 6
 Medians and Order Statistics: selection algorithms.
 
-In-place selection of the kth smallest element of a list, built
-on a three-way partition so that a list full of duplicates
-cannot force the quadratic case.
+Two in-place algorithms for the kth smallest element of a list,
+both built on the same three-way partition so that a list full of
+duplicates cannot force the quadratic case.
 
   kth_smallest      - deterministic, worst-case O(n): the pivot is
                       the median of the medians of groups of five
                       (Blum, Floyd, Pratt, Rivest & Tarjan, 1973).
+  select_random     - randomized, expected O(n): the pivot is a
+                      uniformly random element of the range.
 
 k is 1-based: kth_smallest(a, 1) is the minimum and
 kth_smallest(a, len(a)) is the maximum.
@@ -18,6 +20,8 @@ comparisons and swaps into it, and the empirical analysis in the
 report is built on those exact counts.
 """
 
+import random
+
 _GROUP = 5     # group size for the median of medians
 _CUTOFF = 9    # ranges of at most this size are just sorted
 
@@ -26,7 +30,7 @@ def _three_way(a, lo, hi, pivot, stats):
     """Dutch-national-flag partition of a[lo..hi] around pivot.
 
     On return, a[lo..lt-1] is strictly below pivot, a[lt..gt] is
-    equal to it, and a[gt+1..hi] is strictly above it. Returns
+    equal to pivot, and a[gt+1..hi] is strictly above it. Returns
     the pair (lt, gt). The equal block is what keeps duplicate
     lists linear: a run of equal values ends in one partition
     instead of degrading into n-1 partitions of size n-1.
@@ -128,8 +132,9 @@ def kth_smallest(a, k, stats=None):
     every round pivots on the median of the medians of groups of
     five, which is guaranteed to discard at least 30% of the range
     no matter how the input is ordered, so no input order is a
-    worst case. The list is reordered in place as a side effect,
-    but the kth smallest value is what the call returns.
+    worst case. The list is reordered in place as a side effect
+    (the same way quickselect leaves the list), but the kth
+    smallest value is what the call returns.
 
     Parameters: a     - list of comparable elements
                 k     - 1-based rank, 1 <= k <= len(a)
@@ -151,6 +156,50 @@ def kth_smallest(a, k, stats=None):
     return _select(a, 0, len(a) - 1, k, stats)
 
 
+def select_random(a, k, stats=None):
+    """Return the kth smallest element of a (k is 1-based).
+
+    Randomized quickselect: every round pivots on a uniformly
+    random element of the range and discards the side that does
+    not contain rank k. The expected number of comparisons is at
+    most 4n for any k, so the expected time is O(n) on every input
+    order; the quadratic tail still exists for a fixed unlucky
+    pivot sequence, but it no longer depends on the input. The
+    driver is written as a loop on the surviving range, so the
+    stack stays O(1) no matter how the pivots land.
+
+    Parameters: a     - list of comparable elements
+                k     - 1-based rank, 1 <= k <= len(a)
+                stats - optional dict; filled with "comparisons"
+                        and "swaps" when given
+    Return:    the kth smallest value
+
+    Complexity:
+        Time   - O(n) in expectation for every input and every k.
+        Space  - O(1) beyond the input: the loop replaces the
+                 recursion, and the partition is in place.
+    """
+    if not a:
+        raise ValueError("select_random needs a non-empty list")
+    if not 1 <= k <= len(a):
+        raise ValueError(f"k={k} is out of range 1..{len(a)}")
+    lo, hi = 0, len(a) - 1
+    while True:
+        if lo >= hi:
+            return a[lo]
+        pivot = a[random.randint(lo, hi)]
+        lt, gt = _three_way(a, lo, hi, pivot, stats)
+        eq_start = lt - lo + 1
+        eq_end = gt - lo + 1
+        if eq_start <= k <= eq_end:
+            return pivot
+        if k < eq_start:
+            hi = lt - 1
+        else:
+            k -= eq_end
+            lo = gt + 1
+
+
 def main():
     samples = [
         ([29, 10, 14, 23, 12, 6, 1, 21], 4),
@@ -163,6 +212,7 @@ def main():
         expect = sorted(arr)[k - 1]
         print(f"k={k:2d}  input={arr}")
         print(f"  kth_smallest : {kth_smallest(arr[:], k)}")
+        print(f"  select_random: {select_random(arr[:], k)}")
         print(f"  expected     : {expect}")
         print()
 
