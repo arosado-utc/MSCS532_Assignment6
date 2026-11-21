@@ -1,12 +1,16 @@
 """
 MSCS 532 - Assignment 6
-Measurement harness: the selection sweep (Part 1).
+Measurement harness: the selection sweep (Part 1) and the
+elementary-structure experiments (Part 2).
 
 Run:  python3 benchmark.py
 
 Output:
     results/selection.csv   one row per (kind, size, algorithm)
     results/times.csv       median wall time per (kind, size, algorithm)
+    results/elements.csv    dynamic-array amortization, the
+                            array-versus-list access comparison,
+                            and O(1) head-operation throughputs
     plots/selection_comparisons.png
     plots/selection_time.png
 
@@ -32,6 +36,7 @@ import random
 import statistics
 import time
 
+from elements import ArrayQueue, ArrayStack, DynamicArray, LinkedList
 from selection import kth_smallest, select_random
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -116,6 +121,91 @@ def sweep_selection():
     return comp_rows, time_rows
 
 
+def experiments_elements():
+    """The Part 2 measurements: amortized append, the access
+    pattern comparison, and head-operation throughput."""
+    rows = []
+
+    for n in (256, 1024, 4096):
+        da = DynamicArray()
+        for i in range(n):
+            da.append(i)
+        rows.append(["dynarray", n, "resizes", da.resizes])
+        rows.append(["dynarray", n, "copies", da.copies])
+        rows.append(["dynarray", n, "copies_per_append",
+                     round(da.copies / n, 3)])
+        print(f"dynarray n={n:5d} resizes={da.resizes:3d} "
+              f"copies={da.copies:5d} ({da.copies / n:.3f} per append)")
+
+    n = 2048
+    indices = [random.Random(DATA_SEED).randint(0, n - 1)
+               for _ in range(500)]
+
+    def array_accesses():
+        arr = list(range(n))
+        return sum(arr[i] for i in indices)
+
+    def linked_accesses():
+        ll = LinkedList()
+        for v in range(n):
+            ll.insert_tail(v)
+        return sum(ll.get(i) for i in indices)
+
+    def median_ms(fn, runs):
+        times = []
+        for _ in range(runs):
+            t0 = time.perf_counter()
+            fn()
+            times.append((time.perf_counter() - t0) * 1000.0)
+        return statistics.median(times)
+
+    array_ms = median_ms(array_accesses, 5)
+    linked_ms = median_ms(linked_accesses, 3)
+    rows.append(["access", n, "array_ms", round(array_ms, 4)])
+    rows.append(["access", n, "linked_ms", round(linked_ms, 4)])
+    rows.append(["access", n, "linked_over_array",
+                 round(linked_ms / array_ms, 1)])
+    print(f"access   n={n:5d} 500 random accesses: array={array_ms:.4f} ms "
+          f"linked={linked_ms:.4f} ms ({linked_ms / array_ms:.0f}x)")
+
+    m = 20000
+
+    def stack_ops():
+        st = ArrayStack()
+        for i in range(m):
+            st.push(i)
+        for i in range(m):
+            st.pop()
+
+    def queue_ops():
+        q = ArrayQueue()
+        for i in range(m):
+            q.enqueue(i)
+        for i in range(m):
+            q.dequeue()
+
+    def linked_ops():
+        ll = LinkedList()
+        for i in range(m):
+            ll.insert_head(i)
+        for i in range(m):
+            ll.delete_head()
+
+    for name, fn in (("stack", stack_ops), ("queue", queue_ops),
+                     ("linked", linked_ops)):
+        ms = median_ms(fn, 3)
+        rows.append(["headops", m, name + "_ms", round(ms, 4)])
+        print(f"headops  m={m:5d} {name:7s} 2 x {m} ops = {ms:8.3f} ms")
+
+    with open(os.path.join(HERE, "results", "elements.csv"), "w",
+              newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["experiment", "n", "detail", "value"])
+        w.writerows(rows)
+
+    return rows
+
+
 def make_plots(comp_rows, time_rows):
     import matplotlib
     matplotlib.use("Agg")
@@ -167,11 +257,12 @@ def make_plots(comp_rows, time_rows):
 
 def main():
     comp_rows, time_rows = sweep_selection()
+    experiments_elements()
     try:
         make_plots(comp_rows, time_rows)
     except ImportError:
         print("matplotlib is not installed; skipping the plots")
-    print("wrote results/selection.csv, times.csv, plots/")
+    print("wrote results/selection.csv, times.csv, elements.csv, plots/")
 
 
 if __name__ == "__main__":

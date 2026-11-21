@@ -1,0 +1,16 @@
+experiment,n,detail,value
+dynarray,256,resizes,6
+dynarray,256,copies,252
+dynarray,256,copies_per_append,0.984
+dynarray,1024,resizes,8
+dynarray,1024,copies,1020
+dynarray,1024,copies_per_append,0.996
+dynarray,4096,resizes,10
+dynarray,4096,copies,4092
+dynarray,4096,copies_per_append,0.999
+access,2048,array_ms,0.0197
+access,2048,linked_ms,17.5602
+access,2048,linked_over_array,892.9
+headops,20000,stack_ms,1.2907
+headops,20000,queue_ms,2.5742
+headops,20000,linked_ms,4.4198
